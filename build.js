@@ -26,3 +26,11 @@ const result = await esbuild.transform(code, {
 mkdirSync(join(__dirname, "dist"), { recursive: true });
 writeFileSync(join(__dirname, "dist", "widget.js"), result.code);
 console.log("✅ Built dist/widget.js");
+
+let examplesIndex = readFileSync(
+  join(__dirname, "examples", "index.html"),
+  "utf-8"
+);
+examplesIndex = examplesIndex.replace('../src/widget.js', 'widget.js');
+writeFileSync(join(__dirname, "dist", "index.html"), examplesIndex);
+console.log("✅ Built dist/index.html (demo page)");
