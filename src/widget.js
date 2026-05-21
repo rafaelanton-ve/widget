@@ -23,7 +23,7 @@
     const scriptDataset = currentScript?.dataset || {};
 
     const WIDGET_CONFIG = {
-        apiUrl: "__SUPABASE_URL__",
+        supabaseUrl: "__SUPABASE_URL__",
         anonKey: "__SUPABASE_ANON_KEY__"
     };
 
@@ -62,19 +62,50 @@
     }
 
     function hasValidConfig() {
-        return WIDGET_CONFIG.apiUrl && WIDGET_CONFIG.anonKey;
+        return WIDGET_CONFIG.supabaseUrl && WIDGET_CONFIG.anonKey;
+    }
+
+    function mapTenantToConfig(tenant, socialLinks) {
+        const socials = {};
+        const social_links = {};
+        const company_socials = {};
+
+        for (const link of socialLinks) {
+            const platform = link.platform || link.name;
+            if (platform) {
+                socials[platform] = true;
+                social_links[platform] = link.url || link.link || "#";
+                if (link.show_in_header) {
+                    company_socials[platform] = true;
+                }
+            }
+        }
+
+        return {
+            brand_color: tenant.primary_color || "#25D366",
+            title: tenant.title || "Contáctanos",
+            message: tenant.description || "Escríbenos o síguenos",
+            logo: tenant.logo || "",
+            company_name: tenant.company_name || "",
+            company_url: tenant.company_url || tenant.website || "",
+            company_socials,
+            socials,
+            social_links,
+        };
     }
 
     async function fetchTenantConfig(tenantId) {
-        if (!tenantId || tenantId === "demo" || !hasValidConfig()) {
+        if (!tenantId || !hasValidConfig()) {
             return DEFAULT_CONFIG.demo;
         }
 
         const safeTenantId = sanitizeTenantId(tenantId);
+        const baseUrl = WIDGET_CONFIG.supabaseUrl.replace(/\/+$/, "");
+        const restUrl = `${baseUrl}/rest/v1`;
 
         try {
-            const response = await fetch(
-                `${WIDGET_CONFIG.apiUrl}?tenant=${encodeURIComponent(safeTenantId)}`,
+            const tenantRes = await fetch(
+                `${restUrl}/tenants?slug=eq.${encodeURIComponent(safeTenantId)}&select=*`,
                 {
                     headers: {
                         "Content-Type": "application/json",
@@ -84,18 +115,39 @@
                 }
             );
 
-            if (!response.ok) {
-                console.warn(`Widget API error: ${response.status}`);
+            if (!tenantRes.ok) {
+                console.warn(`Widget API error: ${tenantRes.status}`);
                 return DEFAULT_CONFIG.demo;
             }
 
-            const config = await response.json();
-            if (config.error) {
-                console.warn(`Widget API error: ${config.error}`);
+            const tenantData = await tenantRes.json();
+            if (!tenantData || tenantData.length === 0) {
+                console.warn("Tenant not found");
                 return DEFAULT_CONFIG.demo;
             }
 
-            return config;
+            const tenant = tenantData[0];
+
+            let socialLinks = [];
+            try {
+                const socialRes = await fetch(
+                    `${restUrl}/social_links?tenant_id=eq.${tenant.id}&select=*`,
+                    {
+                        headers: {
+                            "Content-Type": "application/json",
+                            "apikey": WIDGET_CONFIG.anonKey,
+                            "Authorization": `Bearer ${WIDGET_CONFIG.anonKey}`
+                        },
+                    }
+                );
+                if (socialRes.ok) {
+                    socialLinks = await socialRes.json();
+                }
+            } catch (e) {
+                console.warn("Error fetching social links:", e);
+            }
+
+            return mapTenantToConfig(tenant, socialLinks);
         } catch (error) {
             console.error("Error fetching tenant config:", error);
             return DEFAULT_CONFIG.demo;
